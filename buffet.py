@@ -69,17 +69,16 @@ class System:
          while True:
             for i in range(2):
               customer = yield queue.dequeue() 
-              yield self.env.process(servers[i].serve(customer))
-              decision = random.choice(["payment", "order", "other_stall"])
-                
-              if decision == "payment":
+              yield self.env.process(servers[i].serve(customer)) 
+              if random.choice([True, False]):
                     yield self.env.process(self.payment_queue.enqueue(customer))
-              elif decision == "order":
-                    yield self.env.process(self.order_queues[random.choice([0, 1])].enqueue(customer))
-              else:  # "other_stall"
-                    other_stall_queue = list(self.stall_queues)
-                    other_stall_queue.remove(queue)
-                    yield self.env.process(other_stall_queue[random.choice([0, 1])].enqueue(customer))
+              else:
+                    if random.choice([True, False]):
+                        yield self.env.process(self.order_queues[random.choice([0, 1])].enqueue(customer))
+                    else: 
+                        other_stall_queue = list(self.stall_queues)
+                        other_stall_queue.remove(queue)
+                        yield self.env.process(other_stall_queue[random.choice([0, 1])].enqueue(customer))
 
     def payment_process(self):
         while True:
@@ -108,8 +107,8 @@ class System:
 
 def main():
     env = simpy.Environment()
-    total_time = 1000
-    num_customers = 10
+    total_time = 100
+    num_customers = 20
     arrival_rate = 0.4
     service_times = [1, 3, 4, 3, 5, 4, 3, 4, 4, 3, 5, 1]  # 1 Waiting, 4 Order, 6 Stall, 1 Payment
     queue_capacities = [5, 3, 3, 3, 3, 5]  # 1 Waiting, 2 Order, 3 Stall, 1 Payment
