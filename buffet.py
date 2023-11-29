@@ -4,10 +4,14 @@ import random
 class Customer:
     def __init__(self, name):
         self.name = name
-        self.history = []
+        self.waiting_time = []
+        self.service_time = []
 
-    def add_to_history(self, event):
-        self.history.append(event)
+    def add_to_waiting_time(self, event, time):
+        self.waiting_time.append((time, event))
+
+    def add_to_service_time(self, event, time):
+        self.service_time.append((time, event))
 
 class Queue:
     def __init__(self, env, name, capacity):
@@ -16,10 +20,15 @@ class Queue:
         self.queue = simpy.Store(env, capacity=capacity)
 
     def enqueue(self, customer):
+        start_time = self.env.now 
+        customer.add_to_waiting_time(f"enqueue {self.name}", start_time)
         yield self.queue.put(customer)
 
-    def dequeue(self):
-        return self.queue.get()
+    def dequeue(self): 
+        customer = yield self.queue.get()
+        end_time = self.env.now
+        customer.add_to_waiting_time(f"dequeue {self.name}", end_time) 
+        return customer
 
 class Server:
     def __init__(self, env, name, service_time):
@@ -29,8 +38,11 @@ class Server:
         self.busy = False
 
     def serve(self, customer): 
+        start_time = self.env.now  # Record the start time
         yield self.env.timeout(self.service_time)
-        customer.add_to_history(f"{self.env.now} - served by {self.name}")
+        end_time = self.env.now  # Record the end time
+        customer.add_to_service_time(f"served by {self.name}", start_time)
+        customer.add_to_service_time(f"completed service by {self.name}", end_time)
 
 class System:
     def __init__(self, env, num_customers, arrival_rate, service_times, queue_capacities, total_time):
@@ -62,13 +74,13 @@ class System:
     def order_process(self, queue, servers):
          while True:
             for i in range(2):
-              customer = yield queue.dequeue() 
+              customer = yield self.env.process(queue.dequeue()) 
               yield self.env.process(servers[i].serve(customer)) 
               yield self.env.process(self.stall_queues[random.choice([0, 1, 2])].enqueue(customer))
     def stall_process(self, queue, servers):
          while True:
             for i in range(2):
-              customer = yield queue.dequeue() 
+              customer = yield self.env.process(queue.dequeue()) 
               yield self.env.process(servers[i].serve(customer)) 
               if random.choice([True, False]):
                     yield self.env.process(self.payment_queue.enqueue(customer))
@@ -81,12 +93,13 @@ class System:
                         yield self.env.process(other_stall_queue[random.choice([0, 1])].enqueue(customer))
 
     def payment_process(self):
-        while True:
-            customer = yield self.payment_queue.dequeue() 
+        while True: 
+            customer = yield self.env.process(self.payment_queue.dequeue())
             yield self.env.process(self.payment_server.serve(customer))          
     def waiting_process(self):
-        while True:
-            customer = yield self.waiting_queue.dequeue() 
+        while True: 
+            customer = yield self.env.process(self.waiting_queue.dequeue())
+
             yield self.env.process(self.waiting_server.serve(customer)) 
             yield self.env.process(self.order_queues[random.choice([0, 1])].enqueue(customer))   
     def run(self):
@@ -102,19 +115,59 @@ class System:
         # Print the customer's history 
         for customer in self.customers: 
             print(f"# {customer.name} History:")
-            for event in customer.history:
-              print(event)
+            for event in customer.service_time:
+                print(event)
+            for event in customer.waiting_time:
+                print(event)
+
+
+def calculate_system_metrics(system):
+    # Total Service Time
+    total_service_time = sum(customer.service_time[-1][0] - customer.service_time[0][0] for customer in system.customers)
+
+    # Server Utilization Rate
+    server_utilization_rate = total_service_time / system.total_time
+    # Total Waiting Time
+    total_waiting_time = 0
+    for customer in system.customers:
+        for i in range(0, len(customer.waiting_time), 2):
+            total_waiting_time += (customer.waiting_time[i + 1 ][0] - customer.waiting_time[i][0])
+
+
+    # Average     
+    average_waiting_time = total_waiting_time / len(system.customers)
+    average_service_time = total_service_time / len(system.customers)
+
+    # Customer Satisfaction Rate
+    satisfied_customers = sum(1 for customer in system.customers if customer.service_time[-1][1] == 'completed service by Payment Server')
+    customer_satisfaction_rate = satisfied_customers / len(system.customers)
+
+    # Total Time in System
+    total_time_in_system = average_waiting_time + average_service_time
+
+    return {
+        "Server Utilization Rate": server_utilization_rate,
+        "Average Waiting Time": average_waiting_time,
+        "Average Service Time": average_service_time,
+        "Customer Satisfaction Rate": customer_satisfaction_rate,
+        "Total Time in System": total_time_in_system
+    }
 
 def main():
     env = simpy.Environment()
     total_time = 100
-    num_customers = 20
+    num_customers = 10
     arrival_rate = 0.4
     service_times = [1, 3, 4, 3, 5, 4, 3, 4, 4, 3, 5, 1]  # 1 Waiting, 4 Order, 6 Stall, 1 Payment
     queue_capacities = [5, 3, 3, 3, 3, 5]  # 1 Waiting, 2 Order, 3 Stall, 1 Payment
 
     system = System(env, num_customers, arrival_rate, service_times, queue_capacities, total_time)
     system.run()
+    metrics = calculate_system_metrics(system)
+
+    print("\nSystem Metrics:")
+    for metric, value in metrics.items():
+        print(f"{metric}: {value}")
 
 if __name__ == "__main__":
     main()
