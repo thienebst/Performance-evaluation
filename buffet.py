@@ -178,7 +178,7 @@ def calculate_system_metrics(system):
                 customer.service_time[i + 1][0] - customer.service_time[i][0]
             )
     # Server Utilization Rate
-    server_utilization_rate = total_service_time / system.total_time
+    server_utilization_rate = total_service_time / (system.total_time * 12)
     # Total Waiting Time
     total_waiting_time = 0
     for customer in customer_finished:
@@ -210,7 +210,7 @@ def calculate_system_metrics(system):
 def main():
     env = simpy.Environment()
     total_time = 100
-    num_customers = 30
+    num_customers = 20
     arrival_rate = 0.4
     service_times = [
         1,
@@ -248,3 +248,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+ 
